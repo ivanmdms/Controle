@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/css/style.css">
+  <title>Holding Patrimonial</title>
+</head>
+<body class="dark-theme">
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <i data-lucide="building-2"></i>
+        <span>Holding</span>
+      </div>
+      <nav class="nav-links">
+        <a href="#dashboard" class="nav-item active" data-path="dashboard"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+        <a href="#imoveis" class="nav-item" data-path="imoveis"><i data-lucide="home"></i> Imóveis</a>
+        <a href="#locacoes" class="nav-item" data-path="locacoes"><i data-lucide="users"></i> Locações</a>
+        <a href="#manutencoes" class="nav-item" data-path="manutencoes"><i data-lucide="wrench"></i> Manutenções</a>
+        <a href="#transacoes" class="nav-item" data-path="transacoes"><i data-lucide="arrow-right-left"></i> Transações</a>
+        <a href="#documentos" class="nav-item" data-path="documentos"><i data-lucide="folder"></i> Documentos</a>
+      </nav>
+      <div class="user-profile">
+        <div class="avatar">H</div>
+        <div class="user-info">
+          <span class="name">Admin</span>
+          <span class="role">Gestor</span>
+        </div>
+      </div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <h1 id="page-title">Dashboard</h1>
+        <div class="actions">
+          <button id="theme-toggle" class="btn-icon"><i data-lucide="sun"></i></button>
+        </div>
+      </header>
+      <div id="content-area" class="content-scroll">
+        <!-- Content injected here via JS -->
+      </div>
+    </main>
+  </div>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
