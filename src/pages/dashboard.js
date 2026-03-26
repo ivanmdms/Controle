@@ -7,6 +7,17 @@ export async function renderDashboard() {
     <div class="header-actions">
       <h2>Painel de Controle Patrimonial</h2>
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <select id="dash-filter-cidade" class="form-control" style="width: auto; min-width: 150px;">
+          <option value="">Todas Cidades</option>
+          <option value="Boituva">Boituva</option>
+          <option value="Cerquilho">Cerquilho</option>
+          <option value="Rio das Pedras">Rio das Pedras</option>
+          <option value="Araras">Araras</option>
+        </select>
+        <select id="dash-filter-prop" class="form-control" style="width: auto; min-width: 150px;">
+          <option value="">Todos Proprietários</option>
+        </select>
+        
         <button class="btn btn-outline" id="btn-export-drive" style="color: var(--primary); border-color: var(--primary);"><i data-lucide="cloud-upload"></i> Salvar no GDrive</button>
         <button class="btn btn-outline" id="btn-import-drive" style="color: var(--primary); border-color: var(--primary);"><i data-lucide="cloud-download"></i> Carregar do GDrive</button>
         
@@ -81,7 +92,7 @@ export async function renderDashboard() {
       <div style="background: var(--surface-color); border-radius: var(--radius-lg); border: 1px solid var(--border-color); padding: 24px; box-shadow: var(--shadow-sm);">
         <h3 style="margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; font-size: 16px;">
            <i data-lucide="calendar-heart" style="vertical-align: middle; color: var(--primary); margin-right: 8px;"></i> 
-           Contratos para Reajuste (Menos de 30 dias)
+           Término / Reajuste (Menos de 30 dias)
         </h3>
         <ul id="alert-aniversarios" style="list-style: none; padding: 0; margin: 0;">
            <li class="text-secondary" style="font-size: 14px;">Analisando...</li>
@@ -160,15 +171,20 @@ export async function initDashboard() {
     const { data: allPayments } = await db.select('payments');
     const { data: expenses } = await db.select('maintenances');
     const { data: transacs } = await db.select('transactions');
+    const { data: owners } = await db.select('owners');
 
-    const rentals = (allRentals || []).filter(r => r.status === 'ativo');
-    const payments = allPayments || [];
-    const transactions = transacs || [];
-    
-    rentals.forEach(r => {
-       r.imovelNome = allProps?.find(p => p.id === r.property_id)?.title || 'Desconhecido';
-    });
+    const filterProp = document.getElementById('dash-filter-prop');
+    const filterCidade = document.getElementById('dash-filter-cidade');
 
+    if(filterProp && owners) {
+       filterProp.innerHTML = '<option value="">Todos Proprietários</option>' + owners.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
+    }
+
+    if(filterProp) filterProp.addEventListener('change', updateDashboardStats);
+    if(filterCidade) filterCidade.addEventListener('change', updateDashboardStats);
+
+    let chartInstance = null;
+    const filterMonthInput = document.getElementById('filter-month');
     const today = new Date();
     const currentDay = today.getDate();
     const currentMonthStr = `${today.getFullYear()}-${('0' + (today.getMonth() + 1)).slice(-2)}`;
@@ -177,18 +193,49 @@ export async function initDashboard() {
     if (filterMonthInput) {
        filterMonthInput.value = currentMonthStr;
        filterMonthInput.addEventListener('change', () => {
-          renderMonthlyPanorama(filterMonthInput.value);
+          updateDashboardStats();
        });
     }
 
-    // FUNCTION TO RENDER MONTHLY PANORAMA
-    function renderMonthlyPanorama(selectedMonthStr) {
-       // Se o usuario apagar o campo, vamos ignorar e manter o ultimo
-       if(!selectedMonthStr) return;
+    function updateDashboardStats() {
+       const cityParam = filterCidade ? filterCidade.value : '';
+       const propParam = filterProp ? filterProp.value : '';
+
+       // Filter properties based on Selects
+       let filteredProps = allProps || [];
+       const isFiltering = !!(cityParam || propParam);
        
-       let stats = { paid: 0, pending: 0, unpaid: 0 };
-       const isPastMonth = selectedMonthStr < currentMonthStr; // ex: 2026-02 < 2026-03
-       const isFutureMonth = selectedMonthStr > currentMonthStr;
+       if(cityParam) filteredProps = filteredProps.filter(p => p.city === cityParam);
+       if(propParam) filteredProps = filteredProps.filter(p => p.owner_id === propParam);
+       
+       const propIds = filteredProps.map(p => p.id);
+
+       // Filter everything else based on properties
+       const rentals = (allRentals || []).filter(r => r.status === 'ativo' && (!isFiltering || propIds.includes(r.property_id)));
+       const payments = (allPayments || []).filter(p => {
+          if (!isFiltering) return true;
+          const r = (allRentals || []).find(x => x.id === p.rental_id);
+          return r && propIds.includes(r.property_id);
+       });
+       const filteredExpenses = (expenses || []).filter(m => {
+          if (!isFiltering) return true;
+          return m.property_id ? propIds.includes(m.property_id) : false;
+       });
+       const filteredTransacs = (transacs || []).filter(t => {
+          if (!isFiltering) return true;
+          return t.property_id ? propIds.includes(t.property_id) : false;
+       });
+
+       rentals.forEach(r => {
+          r.imovelNome = filteredProps.find(p => p.id === r.property_id)?.title || 'Desconhecido';
+       });
+
+       // FUNCTION TO RENDER MONTHLY PANORAMA
+       const selectedMonthStr = filterMonthInput ? filterMonthInput.value : currentMonthStr;
+       if(selectedMonthStr) {
+          let stats = { paid: 0, pending: 0, unpaid: 0 };
+          const isPastMonth = selectedMonthStr < currentMonthStr; // ex: 2026-02 < 2026-03
+          const isFutureMonth = selectedMonthStr > currentMonthStr;
 
        const rentalsStatus = rentals.map(r => {
           const pay = payments.find(p => p.rental_id === r.id && p.ref_month === selectedMonthStr);
@@ -299,9 +346,7 @@ export async function initDashboard() {
        }
     }
     
-    // Inicia panorama pro mês atual!
-    renderMonthlyPanorama(currentMonthStr);
-
+    // removed renderMonthlyPanorama call because it is now inline
     // ==========================================
     // ANNUAL CHART (CHART.JS)
     // ==========================================
@@ -321,63 +366,69 @@ export async function initDashboard() {
           }
        });
        
-       // Transactions (Buy = Expense, Sell = Income)
-       transactions.forEach(t => {
-          if(t.transaction_date && t.transaction_date.startsWith(currentYear)) {
-             const mIndex = parseInt(t.transaction_date.split('-')[1], 10) - 1;
-             if(t.transaction_type === 'venda') {
-                annualIncome[mIndex] += Number(t.net_total);
-             } else if(t.transaction_type === 'compra') {
-                annualExpense[mIndex] += Number(t.net_total);
+          // Transactions (Buy = Expense, Sell = Income)
+          filteredTransacs.forEach(t => {
+             if(t.transaction_date && t.transaction_date.startsWith(currentYear)) {
+                const mIndex = parseInt(t.transaction_date.split('-')[1], 10) - 1;
+                if(t.transaction_type === 'venda') {
+                   annualIncome[mIndex] += Number(t.net_total);
+                } else if(t.transaction_type === 'compra') {
+                   annualExpense[mIndex] += Number(t.net_total);
+                }
              }
-          }
-       });
+          });
+          
+          // Expenses (Maintenances)
+          filteredExpenses.forEach(m => {
+             if(m.service_date && m.service_date.startsWith(currentYear)) {
+                const mIndex = parseInt(m.service_date.split('-')[1], 10) - 1;
+                annualExpense[mIndex] += Number(m.repair_cost);
+             }
+          });
        
-       // Expenses (Maintenances)
-       (expenses || []).forEach(m => {
-          if(m.service_date && m.service_date.startsWith(currentYear)) {
-             const mIndex = parseInt(m.service_date.split('-')[1], 10) - 1;
-             annualExpense[mIndex] += Number(m.repair_cost);
-          }
-       });
-    
-       new Chart(ctx, {
-          type: 'bar',
-          data: {
-             labels: monthsLabel,
-             datasets: [
-                {
-                   label: 'Receitas (Aluguéis, Vendas)',
-                   data: annualIncome,
-                   backgroundColor: '#22c55e', 
-                   borderRadius: 4
+          if(chartInstance) {
+            chartInstance.data.datasets[0].data = annualIncome;
+            chartInstance.data.datasets[1].data = annualExpense;
+            chartInstance.update();
+          } else {
+             chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                   labels: monthsLabel,
+                   datasets: [
+                      {
+                         label: 'Receitas (Aluguéis, Vendas)',
+                         data: annualIncome,
+                         backgroundColor: '#22c55e', 
+                         borderRadius: 4
+                      },
+                      {
+                         label: 'Despesas (Manutenção, Compras)',
+                         data: annualExpense,
+                         backgroundColor: '#ef4444', 
+                         borderRadius: 4
+                      }
+                   ]
                 },
-                {
-                   label: 'Despesas (Manutenção, Compras)',
-                   data: annualExpense,
-                   backgroundColor: '#ef4444', 
-                   borderRadius: 4
-                }
-             ]
-          },
-          options: {
-             responsive: true,
-             maintainAspectRatio: false,
-             scales: {
-                y: { 
-                   beginAtZero: true, 
-                   ticks: { callback: v => 'R$ '+v.toLocaleString('pt-BR') } 
-                }
-             },
-             plugins: {
-                tooltip: {
-                   callbacks: { 
-                      label: c => c.dataset.label + ': R$ ' + c.raw.toLocaleString('pt-BR', {minimumFractionDigits:2}) 
+                options: {
+                   responsive: true,
+                   maintainAspectRatio: false,
+                   scales: {
+                      y: { 
+                         beginAtZero: true, 
+                         ticks: { callback: v => 'R$ '+v.toLocaleString('pt-BR') } 
+                      }
+                   },
+                   plugins: {
+                      tooltip: {
+                         callbacks: { 
+                            label: c => c.dataset.label + ': R$ ' + c.raw.toLocaleString('pt-BR', {minimumFractionDigits:2}) 
+                         }
+                      }
                    }
                 }
-             }
+             });
           }
-       });
     }
 
     // ==========================================
@@ -391,18 +442,45 @@ export async function initDashboard() {
        return diff >= 0 && diff <= 5;
     }).sort((a,b) => Number(a.due_day) - Number(b.due_day));
 
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
     const aniversarios = rentals.filter(r => {
-       if(!r.start_date) return false;
-       const start = new Date(r.start_date);
-       let anniv = new Date(start);
-       anniv.setFullYear(today.getFullYear());
-       if (anniv < today) anniv.setFullYear(today.getFullYear() + 1);
+       r.terminationOrAnniv = null;
+       r.daysToAlert = 999;
+       r.alertType = "";
        
-       const diffMs = anniv - today;
-       const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+       if(r.end_date) {
+         const [eYear, eMonth, eDay] = r.end_date.split('-');
+         const endDateObj = new Date(eYear, eMonth - 1, eDay);
+         const diffMs = endDateObj - todayDateOnly;
+         const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+         if (diffDays <= 30 && diffDays >= -60) {
+           r.daysToAlert = diffDays;
+           r.alertType = "Término de Contrato";
+           r.terminationOrAnniv = endDateObj;
+         }
+       }
        
-       return diffDays >= 0 && diffDays <= 30;
-    }).sort((a,b) => new Date(a.start_date).getMonth() - new Date(b.start_date).getMonth());
+       if(r.start_date && r.daysToAlert > 30) {
+          const [sYear, sMonth, sDay] = r.start_date.split('-');
+          const start = new Date(sYear, sMonth - 1, sDay);
+          let anniv = new Date(start);
+          anniv.setFullYear(today.getFullYear());
+          if (anniv < todayDateOnly) anniv.setFullYear(today.getFullYear() + 1);
+          
+          const diffMs = anniv - todayDateOnly;
+          const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+          const yearsCompleted = anniv.getFullYear() - start.getFullYear();
+          
+          if (diffDays <= 30 && diffDays >= 0 && yearsCompleted >= 1) {
+             r.daysToAlert = diffDays;
+             r.alertType = `Reajuste (${yearsCompleted} anos)`;
+             r.terminationOrAnniv = anniv;
+          }
+       }
+       
+       return r.daysToAlert <= 30;
+    }).sort((a,b) => a.daysToAlert - b.daysToAlert);
 
     let totalR = 0;
     rentals.forEach(r => {
@@ -410,7 +488,7 @@ export async function initDashboard() {
     });
     
     let totalD = 0;
-    if (expenses) totalD = expenses.reduce((acc, curr) => acc + Number(curr.repair_cost), 0);
+    if (filteredExpenses) totalD = filteredExpenses.reduce((acc, curr) => acc + Number(curr.repair_cost), 0);
     
     document.getElementById('dash-receitas').innerText = 'R$ ' + totalR.toLocaleString('pt-BR', {minimumFractionDigits: 2});
     document.getElementById('dash-despesas').innerText = 'R$ ' + totalD.toLocaleString('pt-BR', {minimumFractionDigits: 2});
@@ -441,23 +519,30 @@ export async function initDashboard() {
 
     const listAniv = document.getElementById('alert-aniversarios');
     if(aniversarios.length === 0){
-       listAniv.innerHTML = '<li class="text-secondary" style="font-size: 14px;">Nenhum contrato completando aniversário nos próximos 30 dias.</li>';
+       listAniv.innerHTML = '<li class="text-secondary" style="font-size: 14px;">Nenhum contrato expirando ou completando aniversário nos próximos 30 dias.</li>';
     } else {
        listAniv.innerHTML = aniversarios.map(a => `
          <li style="padding: 12px 0; border-bottom: 1px solid var(--border-color); font-size: 14px; display:flex; justify-content:space-between;">
             <div>
               <strong>${a.imovelNome}</strong><br>
-              <span class="text-secondary">Início original: ${a.start_date.split('-').reverse().join('/')}</span>
+              <span class="text-secondary">${a.alertType}: ${a.terminationOrAnniv.toLocaleDateString('pt-BR')}</span>
             </div>
             <div style="text-align:right;">
-               <span class="badge" style="background:var(--primary); color:#fff;">Próximo 12 meses</span>
+               <span class="badge" style="background:${a.daysToAlert < 0 ? 'var(--danger)' : 'var(--primary)'}; color:#fff;">
+                 ${a.daysToAlert < 0 ? 'Vencido há ' + Math.abs(a.daysToAlert) + ' dias' : 'Faltam ' + a.daysToAlert + ' dia(s)'}
+               </span>
             </div>
          </li>
        `).join('');
     }
 
     createIcons({ icons });
+  } // End of updateDashboardStats
+
+  updateDashboardStats();
+
   } catch(e) {
+    console.error("Erro no initDashboard:", e);
     document.getElementById('dash-receitas').innerText = 'R$ 0,00';
     document.getElementById('dash-despesas').innerText = 'R$ 0,00';
     document.getElementById('dash-liquido').innerText = 'R$ 0,00';

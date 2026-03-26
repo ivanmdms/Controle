@@ -5,7 +5,10 @@ export async function renderLocacoes() {
   return `
     <div class="header-actions">
       <h2>Controle de Locações</h2>
-      <button class="btn btn-primary" id="btn-add-locacao"><i data-lucide="plus"></i> Nova Locação</button>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-outline" id="btn-zerar-valores" style="color: var(--warning); border-color: var(--warning);" title="Zerar valores de todas locações"><i data-lucide="refresh-cw"></i> Zerar Todos Valores</button>
+        <button class="btn btn-primary" id="btn-add-locacao"><i data-lucide="plus"></i> Nova Locação</button>
+      </div>
     </div>
     
     <div class="table-container">
@@ -44,6 +47,10 @@ export async function renderLocacoes() {
           <div class="form-group">
             <label>Documento (CPF/CNPJ)</label>
             <input type="text" id="locacao-documento" class="form-control">
+          </div>
+          <div class="form-group">
+            <label>WhatsApp do Inquilino</label>
+            <input type="text" id="locacao-whatsapp" class="form-control" placeholder="Apenas números ex: 5511999999999">
           </div>
           <div class="form-group">
             <label>Data de Início</label>
@@ -108,6 +115,7 @@ export async function renderLocacoes() {
           </div>
           
           <div class="form-group full-width" style="margin-top: 16px; text-align: right;">
+            <button type="button" class="btn btn-outline" id="limpar-valores-locacao" style="margin-right: 8px; float: left;"><i data-lucide="eraser" style="width:16px; height:16px;"></i> Limpar Valores</button>
             <button type="button" class="btn btn-outline" id="cancel-locacao" style="margin-right: 8px;">Cancelar</button>
             <button type="submit" class="btn btn-primary">Salvar Locação</button>
           </div>
@@ -156,7 +164,7 @@ export async function renderLocacoes() {
                  <th>Data de Registro</th>
                  <th>Status</th>
                  <th>Valor Recebido</th>
-                 <th>Recibo / Ações</th>
+                 <th style="min-width: 250px;">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -239,6 +247,36 @@ export async function initLocacoes() {
   if(btnClose) btnClose.addEventListener('click', closeModal);
   if(btnCancel) btnCancel.addEventListener('click', closeModal);
 
+  const btnZerarTodos = document.getElementById('btn-zerar-valores');
+  if(btnZerarTodos) {
+    btnZerarTodos.addEventListener('click', async () => {
+      if(confirm('ATENÇÃO: Isso zerará os valores de Aluguel, IPTU e Condomínio de TODAS as locações ativas e inativas. Tem certeza?')) {
+        const { data: rentals } = await db.select('rentals');
+        if(rentals && rentals.length > 0) {
+          for (const r of rentals) {
+            await db.update('rentals', r.id, { monthly_rent: 0, iptu_value: 0, condo_value: 0 });
+          }
+          alert('Valores zerados com sucesso.');
+          loadLocacoes();
+        }
+      }
+    });
+  }
+
+  const btnLimparValores = document.getElementById('limpar-valores-locacao');
+  if(btnLimparValores) {
+    btnLimparValores.addEventListener('click', () => {
+      document.getElementById('locacao-valor').value = 0;
+      document.getElementById('locacao-condominio').value = 0;
+      document.getElementById('locacao-iptu-valor').value = 0;
+      document.getElementById('locacao-iptu-parcelas').value = 1;
+      if (iptuTipoInput) {
+        iptuTipoInput.value = 'isento';
+        iptuTipoInput.dispatchEvent(new Event('change'));
+      }
+    });
+  }
+
   if(form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -248,6 +286,7 @@ export async function initLocacoes() {
         property_id,
         tenant_name: document.getElementById('locacao-inquilino').value,
         tenant_document: document.getElementById('locacao-documento').value,
+        tenant_whatsapp: document.getElementById('locacao-whatsapp').value,
         start_date: document.getElementById('locacao-inicio').value,
         end_date: document.getElementById('locacao-fim').value || null,
         due_day: parseInt(document.getElementById('locacao-vencimento').value),
@@ -326,7 +365,7 @@ export async function initLocacoes() {
     }
   };
 
-  window.generateReceipt = async (pay_id) => {
+  window.generateReceiptImage = async (pay_id) => {
      const { data: payments } = await db.select('payments');
      const { data: rentals } = await db.select('rentals');
      const { data: props } = await db.select('properties');
@@ -336,62 +375,76 @@ export async function initLocacoes() {
      const rental = rentals.find(r => r.id === pay.rental_id);
      const prop = props.find(p => p.id === rental.property_id);
      
-     // Quebrar ano/mês
      const dm = pay.ref_month.split('-');
      const mesDoc = dm[1] + '/' + dm[0];
 
      const html = `
-       <html>
-         <head>
-           <title>Recibo de Aluguel - ${mesDoc}</title>
-           <style>
-             body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #222; }
-             .receipt-box { border: 2px dashed #999; padding: 40px; border-radius: 8px; max-width: 800px; margin: 0 auto; position: relative; }
-             .title { text-align: center; font-size: 26px; font-weight: bold; margin-bottom: 30px; border-bottom: 2px solid #222; padding-bottom: 10px; text-transform: uppercase; letter-spacing: 2px;}
-             .amount { position: absolute; top: 40px; right: 40px; font-size: 22px; font-weight: bold; background: #e5e7eb; padding: 10px 20px; border-radius: 6px; border: 1px solid #d1d5db;}
-             .content { font-size: 18px; line-height: 2; margin-bottom: 50px; text-align: justify; }
-             .content strong { font-weight: 700; }
-             .footer { margin-top: 60px; display: flex; justify-content: space-between; align-items: flex-end;}
-             .date { font-size: 16px; }
-             .signature { border-top: 1px solid #222; padding-top: 10px; width: 40%; text-align: center; font-weight: bold; }
-             @media print { .receipt-box { border: 2px solid #000; } }
-           </style>
-         </head>
-         <body>
-           <div class="receipt-box">
-             <div class="title">RECIBO DE PAGAMENTO</div>
-             <div class="amount">R$ ${Number(pay.amount_paid).toLocaleString('pt-BR', {minimumFractionDigits:2})}</div>
-             
-             <div class="content">
-                Recebi(emos) do(a) Sr(a). <strong>${rental.tenant_name.toUpperCase()}</strong>, inscrito(a) sob o documento <strong>${rental.tenant_document || '_______'}</strong>, 
-                a importância líquida de <strong>R$ ${Number(pay.amount_paid).toLocaleString('pt-BR', {minimumFractionDigits:2})}</strong>,
-                referente ao aluguel mensal e encargos associados (IPTU/Condomínio) de competência do mês <strong>${mesDoc}</strong>, 
-                relativo ao imóvel situado no endereço: <strong>${prop.address || ''} (${prop.title})</strong>.
-                <br><br>
-                Por ser verdade, e para maior clareza, firmo(amos) o presente recibo dando plena e geral quitação do valor aqui discriminado.
-             </div>
-             
-             <div class="footer">
-                <div class="date">
-                  <strong>Local e Data:</strong><br>
-                  ________________, ${new Date().toLocaleDateString('pt-BR')}
-                </div>
-                <div class="signature">
-                  Assinatura do Locador / Gestor
-                </div>
-             </div>
+       <div id="receipt-container" style="width: 800px; padding: 40px; background: white; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #222; position: absolute; left: -9999px;">
+         <div style="border: 2px dashed #999; padding: 40px; border-radius: 8px;">
+           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #222; padding-bottom: 20px; margin-bottom: 30px;">
+             <div style="font-size: 26px; font-weight: bold; text-transform: uppercase; letter-spacing: 2px;">RECIBO DE PAGAMENTO</div>
+             <div style="font-size: 22px; font-weight: bold; background: #e5e7eb; padding: 10px 20px; border-radius: 6px; border: 1px solid #d1d5db;">R$ ${Number(pay.amount_paid).toLocaleString('pt-BR', {minimumFractionDigits:2})}</div>
            </div>
-           <script>
-             window.print();
-             setTimeout(() => window.close(), 1000); // Fecha a guia auto
-           </script>
-         </body>
-       </html>
+           
+           <div style="font-size: 18px; line-height: 2; margin-bottom: 50px; text-align: justify;">
+              Recebi(emos) do(a) Sr(a). <strong>${rental.tenant_name.toUpperCase()}</strong>, inscrito(a) sob o documento <strong>${rental.tenant_document || '_______'}</strong>, 
+              a importância líquida de <strong>R$ ${Number(pay.amount_paid).toLocaleString('pt-BR', {minimumFractionDigits:2})}</strong>,
+              referente ao aluguel mensal e encargos associados (IPTU/Condomínio) de competência do mês <strong>${mesDoc}</strong>, 
+              relativo ao imóvel situado no endereço: <strong>${prop.address || ''} (${prop.title})</strong>.
+              <br><br>
+              Por ser verdade, e para maior clareza, firmo(amos) o presente recibo dando plena e geral quitação do valor aqui discriminado.
+           </div>
+           
+           <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px;">
+              <div style="font-size: 16px;">
+                <strong>Local e Data:</strong><br>
+                ________________, ${new Date().toLocaleDateString('pt-BR')}
+              </div>
+              <div style="border-top: 1px solid #222; padding-top: 10px; width: 40%; text-align: center; font-weight: bold;">
+                <div style="font-family: 'Homemade Apple', cursive, Arial; font-size: 28px; font-weight: normal; margin-bottom: 5px; color: #1a1a1a;">Ivan Mendes</div>
+                Assinatura do Locador
+              </div>
+           </div>
+         </div>
+       </div>
      `;
      
-     const win = window.open('', '_blank');
-     win.document.write(html);
-     win.document.close();
+     const div = document.createElement('div');
+     div.innerHTML = html;
+     document.body.appendChild(div);
+
+     try {
+       const canvas = await html2canvas(document.getElementById('receipt-container'), { scale: 2 });
+       const imgData = canvas.toDataURL('image/jpeg', 0.9);
+       const a = document.createElement('a');
+       a.href = imgData;
+       a.download = `Recibo_Aluguel_${rental.tenant_name.replace(/\s/g, '_')}_${mesDoc.replace('/','-')}.jpg`;
+       a.click();
+     } catch (e) {
+       alert('Erro ao gerar imagem do recibo.');
+     } finally {
+       document.body.removeChild(div);
+     }
+  };
+
+  window.sendWhatsApp = async (pay_id) => {
+     const { data: payments } = await db.select('payments');
+     const { data: rentals } = await db.select('rentals');
+     
+     const pay = payments.find(p => p.id === pay_id);
+     if(!pay) return;
+     const rental = rentals.find(r => r.id === pay.rental_id);
+     
+     let whatsapp = rental.tenant_whatsapp;
+     if(!whatsapp) {
+        alert('WhatsApp do inquilino não cadastrado na Locação.');
+        return;
+     }
+
+     whatsapp = whatsapp.replace(/\D/g, ''); // manter apenas numeros
+     const text = `Olá ${rental.tenant_name}, acusamos o recebimento do seu aluguel no valor de R$ ${Number(pay.amount_paid).toLocaleString('pt-BR',{minimumFractionDigits:2})}. Segue anexo o recibo.`;
+     const url = `https://wa.me/${whatsapp}?text=${encodeURIComponent(text)}`;
+     window.open(url, '_blank');
   };
 
   async function loadPagamentos(rental_id) {
@@ -424,7 +477,10 @@ export async function initLocacoes() {
               <td><span class="badge ${badgeStatus}">${textStatus}</span></td>
               <td>R$ ${Number(p.amount_paid).toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
               <td>
-                <button class="btn btn-outline" onclick="generateReceipt('${p.id}')" title="Gerar Recibo PDF" style="padding: 4px 8px; font-size: 11px; margin-right: 4px;"><i data-lucide="printer" style="width:14px; height:14px;"></i> Recibo</button>
+                <div style="display:flex; margin-bottom:4px;">
+                  <button class="btn btn-outline" onclick="generateReceiptImage('${p.id}')" title="Gerar JPG" style="padding: 4px 8px; font-size: 11px; margin-right: 4px;"><i data-lucide="image" style="width:14px; height:14px;"></i> JPG</button>
+                  <button class="btn btn-outline" onclick="sendWhatsApp('${p.id}')" title="WhatsApp" style="padding: 4px 8px; font-size: 11px; margin-right: 4px; border-color:#10b981; color:#10b981;"><i data-lucide="message-square" style="width:14px; height:14px;"></i> Whats</button>
+                </div>
                 <button class="btn-icon" onclick="deletePayment('${p.id}')" title="Excluir"><i data-lucide="trash-2" style="width:16px;"></i></button>
               </td>
             </tr>
@@ -445,6 +501,7 @@ export async function initLocacoes() {
       document.getElementById('locacao-imovel').value = item.property_id;
       document.getElementById('locacao-inquilino').value = item.tenant_name;
       document.getElementById('locacao-documento').value = item.tenant_document || '';
+      document.getElementById('locacao-whatsapp').value = item.tenant_whatsapp || '';
       document.getElementById('locacao-inicio').value = item.start_date;
       document.getElementById('locacao-fim').value = item.end_date || '';
       document.getElementById('locacao-vencimento').value = item.due_day || 5;

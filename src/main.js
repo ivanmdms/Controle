@@ -5,6 +5,8 @@ import { renderLocacoes, initLocacoes } from './pages/locacoes.js';
 import { renderManutencoes, initManutencoes } from './pages/manutencoes.js';
 import { renderTransacoes, initTransacoes } from './pages/transacoes.js';
 import { renderDocumentos, initDocumentos } from './pages/documentos.js';
+import { renderProprietarios, initProprietarios } from './pages/proprietarios.js';
+import { renderPrestadores, initPrestadores } from './pages/prestadores.js';
 
 // Theme toggler
 const themeToggle = document.getElementById('theme-toggle');
@@ -27,6 +29,8 @@ const pages = {
   manutencoes: { title: 'Reformas e Manutenções', render: renderManutencoes, init: initManutencoes },
   transacoes: { title: 'Transações Patrimoniais', render: renderTransacoes, init: initTransacoes },
   documentos: { title: 'Acervo de Documentos', render: renderDocumentos, init: initDocumentos },
+  proprietarios: { title: 'Cadastro de Proprietários', render: renderProprietarios, init: initProprietarios },
+  prestadores: { title: 'Prestadores de Serviço', render: renderPrestadores, init: initPrestadores },
 };
 
 async function navigate(path) {
