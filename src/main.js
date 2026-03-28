@@ -1,4 +1,4 @@
-import { createIcons, icons } from 'lucide';
+import { createIcons, icons } from 'https://unpkg.com/lucide@latest/dist/esm/lucide.js';
 import { renderDashboard, initDashboard } from './pages/dashboard.js';
 import { renderImoveis, initImoveis } from './pages/imoveis.js';
 import { renderLocacoes, initLocacoes } from './pages/locacoes.js';

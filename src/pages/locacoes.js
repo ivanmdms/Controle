@@ -1,5 +1,5 @@
 import { db } from '../lib/database.js';
-import { icons, createIcons } from 'lucide';
+import { icons, createIcons } from 'https://unpkg.com/lucide@latest/dist/esm/lucide.js';
 
 export async function renderLocacoes() {
   return `
